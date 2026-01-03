@@ -99,11 +99,11 @@ export const isEmpty = (value) => {
 };
 
 /**
- * Validate and sanitize user input for Firestore
+ * Validate and sanitize user input for API
  * @param {Object} data - Data object to validate
  * @returns {Object} Sanitized data object
  */
-export const sanitizeFirestoreData = (data) => {
+export const sanitizeApiData = (data) => {
   const sanitized = {};
   
   for (const [key, value] of Object.entries(data)) {
@@ -112,11 +112,20 @@ export const sanitizeFirestoreData = (data) => {
     if (typeof value === 'string') {
       sanitized[key] = normalizeString(value);
     } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-      sanitized[key] = sanitizeFirestoreData(value);
+      sanitized[key] = sanitizeApiData(value);
     } else {
       sanitized[key] = value;
     }
   }
   
   return sanitized;
+};
+
+/**
+ * Validate verification code format
+ * @param {string} code - Verification code to validate
+ * @returns {boolean} True if valid code format
+ */
+export const isValidVerificationCode = (code) => {
+  return typeof code === 'string' && /^\d{6}$/.test(code);
 };

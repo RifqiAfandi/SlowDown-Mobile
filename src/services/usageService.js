@@ -1,23 +1,15 @@
 /**
  * Usage Service
- * Handles app usage tracking and logging
+ * Handles app usage tracking and logging with PostgreSQL backend via API
  */
 
-import firestore from '@react-native-firebase/firestore';
+import { apiClient } from '../config/api';
 import { Logger } from '../utils/logger';
-import { COLLECTIONS, SOCIAL_MEDIA_APPS } from '../constants';
+import { SOCIAL_MEDIA_APPS } from '../constants';
 import { getCurrentWIBDate, getDateKey, getWeekDateKeys } from '../utils/dateUtils';
 import { isValidUserId } from '../utils/validation';
 
 const logger = Logger.create('UsageService');
-
-/**
- * Get usage logs collection reference
- * @returns {CollectionReference} Usage logs collection reference
- */
-const getUsageLogsCollection = () => {
-  return firestore().collection(COLLECTIONS.USAGE_LOGS);
-};
 
 /**
  * Log app usage
@@ -33,28 +25,13 @@ export const logUsage = async (userId, appId, durationMinutes) => {
     }
     
     const dateKey = getDateKey(getCurrentWIBDate());
-    const docId = `${userId}_${dateKey}_${appId}`;
-    const docRef = getUsageLogsCollection().doc(docId);
     
-    const doc = await docRef.get();
-    
-    if (doc.exists) {
-      // Update existing log
-      await docRef.update({
-        durationMinutes: firestore.FieldValue.increment(durationMinutes),
-        lastUpdatedAt: firestore.FieldValue.serverTimestamp(),
-      });
-    } else {
-      // Create new log
-      await docRef.set({
-        userId,
-        appId,
-        dateKey,
-        durationMinutes,
-        createdAt: firestore.FieldValue.serverTimestamp(),
-        lastUpdatedAt: firestore.FieldValue.serverTimestamp(),
-      });
-    }
+    await apiClient.post('/usage/log', {
+      userId,
+      appId,
+      dateKey,
+      durationMinutes,
+    });
     
     logger.debug('Usage logged', { userId, appId, durationMinutes });
   } catch (error) {
@@ -77,31 +54,11 @@ export const getDailyUsage = async (userId, dateKey = null) => {
     
     const targetDateKey = dateKey || getDateKey(getCurrentWIBDate());
     
-    const snapshot = await getUsageLogsCollection()
-      .where('userId', '==', userId)
-      .where('dateKey', '==', targetDateKey)
-      .get();
-    
-    const usage = {};
-    let totalMinutes = 0;
-    
-    // Initialize all apps with 0
-    SOCIAL_MEDIA_APPS.forEach(app => {
-      usage[app.id] = 0;
+    const response = await apiClient.get(`/usage/${userId}/daily`, {
+      params: { dateKey: targetDateKey },
     });
     
-    // Fill in actual usage
-    snapshot.docs.forEach(doc => {
-      const data = doc.data();
-      usage[data.appId] = data.durationMinutes || 0;
-      totalMinutes += data.durationMinutes || 0;
-    });
-    
-    return {
-      dateKey: targetDateKey,
-      apps: usage,
-      totalMinutes,
-    };
+    return response.data;
   } catch (error) {
     logger.error('Failed to get daily usage', error);
     throw error;
@@ -119,37 +76,9 @@ export const getWeeklyUsage = async (userId) => {
       throw new Error('Invalid user ID');
     }
     
-    const dateKeys = getWeekDateKeys();
+    const response = await apiClient.get(`/usage/${userId}/weekly`);
     
-    const snapshot = await getUsageLogsCollection()
-      .where('userId', '==', userId)
-      .where('dateKey', 'in', dateKeys)
-      .get();
-    
-    // Create a map of usage by date and app
-    const usageMap = {};
-    dateKeys.forEach(key => {
-      usageMap[key] = {
-        dateKey: key,
-        apps: {},
-        totalMinutes: 0,
-      };
-      SOCIAL_MEDIA_APPS.forEach(app => {
-        usageMap[key].apps[app.id] = 0;
-      });
-    });
-    
-    // Fill in actual usage
-    snapshot.docs.forEach(doc => {
-      const data = doc.data();
-      if (usageMap[data.dateKey]) {
-        usageMap[data.dateKey].apps[data.appId] = data.durationMinutes || 0;
-        usageMap[data.dateKey].totalMinutes += data.durationMinutes || 0;
-      }
-    });
-    
-    // Convert to array in chronological order
-    return dateKeys.map(key => usageMap[key]);
+    return response.data;
   } catch (error) {
     logger.error('Failed to get weekly usage', error);
     throw error;
@@ -163,42 +92,9 @@ export const getWeeklyUsage = async (userId) => {
  */
 export const getUsageStats = async (userId) => {
   try {
-    const weeklyUsage = await getWeeklyUsage(userId);
+    const response = await apiClient.get(`/usage/${userId}/stats`);
     
-    // Calculate averages and totals
-    let weeklyTotal = 0;
-    const appTotals = {};
-    
-    SOCIAL_MEDIA_APPS.forEach(app => {
-      appTotals[app.id] = 0;
-    });
-    
-    weeklyUsage.forEach(day => {
-      weeklyTotal += day.totalMinutes;
-      Object.entries(day.apps).forEach(([appId, minutes]) => {
-        appTotals[appId] += minutes;
-      });
-    });
-    
-    const dailyAverage = weeklyTotal / 7;
-    
-    // Find most used app
-    let mostUsedApp = null;
-    let maxUsage = 0;
-    Object.entries(appTotals).forEach(([appId, total]) => {
-      if (total > maxUsage) {
-        maxUsage = total;
-        mostUsedApp = appId;
-      }
-    });
-    
-    return {
-      weeklyTotal,
-      dailyAverage,
-      appTotals,
-      mostUsedApp,
-      mostUsedAppMinutes: maxUsage,
-    };
+    return response.data;
   } catch (error) {
     logger.error('Failed to get usage stats', error);
     throw error;
@@ -206,42 +102,41 @@ export const getUsageStats = async (userId) => {
 };
 
 /**
- * Subscribe to today's usage for a user
+ * Subscribe to today's usage for a user (polling-based for API)
  * @param {string} userId - User ID
  * @param {Function} callback - Callback function(usageData)
+ * @param {number} interval - Polling interval in ms (default: 30000)
  * @returns {Function} Unsubscribe function
  */
-export const subscribeToTodayUsage = (userId, callback) => {
-  const dateKey = getDateKey(getCurrentWIBDate());
+export const subscribeToTodayUsage = (userId, callback, interval = 30000) => {
+  let isActive = true;
   
-  return getUsageLogsCollection()
-    .where('userId', '==', userId)
-    .where('dateKey', '==', dateKey)
-    .onSnapshot(
-      (snapshot) => {
-        const usage = {};
-        let totalMinutes = 0;
-        
-        SOCIAL_MEDIA_APPS.forEach(app => {
-          usage[app.id] = 0;
-        });
-        
-        snapshot.docs.forEach(doc => {
-          const data = doc.data();
-          usage[data.appId] = data.durationMinutes || 0;
-          totalMinutes += data.durationMinutes || 0;
-        });
-        
-        callback({
-          dateKey,
-          apps: usage,
-          totalMinutes,
-        });
-      },
-      (error) => {
-        logger.error('Today usage subscription error', error);
+  const fetchUsage = async () => {
+    if (!isActive) return;
+    
+    try {
+      const dateKey = getDateKey(getCurrentWIBDate());
+      const usage = await getDailyUsage(userId, dateKey);
+      
+      if (isActive) {
+        callback(usage);
       }
-    );
+    } catch (error) {
+      logger.error('Today usage subscription error', error);
+    }
+  };
+  
+  // Initial fetch
+  fetchUsage();
+  
+  // Set up polling
+  const intervalId = setInterval(fetchUsage, interval);
+  
+  // Return unsubscribe function
+  return () => {
+    isActive = false;
+    clearInterval(intervalId);
+  };
 };
 
 export const usageService = {

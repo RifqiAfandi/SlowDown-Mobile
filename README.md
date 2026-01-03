@@ -33,11 +33,14 @@ SlowDown adalah aplikasi mobile yang membantu pengguna mengurangi waktu yang dih
 
 - **Framework**: Expo Bare Workflow
 - **Language**: JavaScript
-- **Authentication**: Firebase Auth + Google Sign-In
-- **Database**: Firebase Firestore
+- **Platform**: Android Only
+- **Authentication**: Google Sign-In + Email Verification
+- **Database**: PostgreSQL (via Backend API)
+- **HTTP Client**: Axios
 - **Navigation**: React Navigation
 - **Charts**: react-native-chart-kit
 - **Icons**: react-native-vector-icons
+- **Config**: react-native-config
 
 ## Struktur Folder
 
@@ -49,7 +52,8 @@ src/
 │   ├── common/         # Komponen reusable
 │   └── time/           # Komponen waktu
 ├── config/
-│   └── firebase.js     # Konfigurasi Firebase
+│   ├── api.js          # Konfigurasi API Client
+│   └── env.js          # Konfigurasi Environment
 ├── constants/
 │   └── index.js        # Konstanta aplikasi
 ├── contexts/
@@ -81,6 +85,8 @@ src/
 - npm atau yarn
 - Android Studio (untuk Android)
 - Expo CLI
+- PostgreSQL Database
+- Backend API Server (Node.js/Express)
 
 ### 1. Clone Repository
 ```bash
@@ -93,37 +99,57 @@ cd SlowDown-Mobile
 npm install
 ```
 
-### 3. Konfigurasi Firebase
+### 3. Konfigurasi Environment
 
-1. Buat project di [Firebase Console](https://console.firebase.google.com)
-2. Aktifkan **Authentication** dengan provider Google
-3. Buat **Firestore Database**
-4. Copy konfigurasi Firebase ke `src/config/firebase.js`
-
-```javascript
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_AUTH_DOMAIN",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_STORAGE_BUCKET",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
-};
+1. Copy `.env.example` ke `.env`
+```bash
+cp .env.example .env
 ```
 
-### 4. Konfigurasi Google Sign-In (Android)
+2. Update konfigurasi di `.env`:
+```env
+# Database Configuration
+DB_NAME=precision_agriculture
+DB_USER=postgres
+DB_PASSWORD=2002
+DB_HOST=localhost
+DB_PORT=5432
 
-1. Di Firebase Console, tambahkan Android app
-2. Download `google-services.json`
+# API Configuration
+API_BASE_URL=http://localhost:3000/api
+
+# Admin Configuration
+ADMIN_EMAIL=rifqitriafandi.2002@gmail.com
+
+# Google OAuth Configuration
+GOOGLE_WEB_CLIENT_ID=YOUR_WEB_CLIENT_ID.apps.googleusercontent.com
+```
+
+### 4. Setup Backend API Server
+
+Lihat `backend/README.js` untuk detail implementasi backend server yang diperlukan.
+
+Backend harus menyediakan endpoint untuk:
+- Authentication (Google OAuth & Email Verification)
+- User Management
+- Usage Tracking
+- Time Requests
+
+### 5. Konfigurasi Google Sign-In (Android)
+
+1. Di Google Cloud Console, buat OAuth 2.0 credentials
+2. Download `google-services.json` (jika menggunakan Firebase untuk Google Sign-In)
 3. Letakkan di folder `android/app/`
-4. Tambahkan SHA-1 certificate fingerprint ke Firebase
+4. Tambahkan SHA-1 certificate fingerprint
 
 ```bash
 cd android
 ./gradlew signingReport
 ```
 
-### 5. Konfigurasi AndroidManifest.xml
+5. Update `GOOGLE_WEB_CLIENT_ID` di `.env` dengan Web Client ID
+
+### 6. Konfigurasi AndroidManifest.xml
 
 Tambahkan permission berikut untuk fitur overlay:
 
@@ -133,52 +159,71 @@ Tambahkan permission berikut untuk fitur overlay:
     tools:ignore="ProtectedPermissions" />
 ```
 
-### 6. Struktur Firestore
+### 7. Database Schema (PostgreSQL)
 
-**Collection: `users`**
-```javascript
-{
-  id: string,
-  email: string,
-  displayName: string,
-  photoURL: string,
-  role: 'admin' | 'user',
-  isBlocked: boolean,
-  dailyLimitMinutes: number,
-  createdAt: timestamp,
-  updatedAt: timestamp
-}
+**Table: `users`**
+```sql
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email VARCHAR(255) UNIQUE NOT NULL,
+  display_name VARCHAR(100),
+  photo_url TEXT,
+  role VARCHAR(20) DEFAULT 'user',
+  daily_limit_minutes INTEGER DEFAULT 30,
+  bonus_minutes INTEGER DEFAULT 0,
+  today_used_minutes INTEGER DEFAULT 0,
+  is_blocked BOOLEAN DEFAULT FALSE,
+  block_reason TEXT,
+  current_date_key VARCHAR(10),
+  last_reset_date TIMESTAMP,
+  pending_time_request UUID,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  last_login_at TIMESTAMP
+);
 ```
 
-**Collection: `usageRecords`**
-```javascript
-{
-  userId: string,
-  date: string (YYYY-MM-DD),
-  totalMinutes: number,
-  apps: {
-    instagram: number,
-    twitter: number,
-    reddit: number,
-    youtube: number,
-    threads: number
-  },
-  createdAt: timestamp
-}
+**Table: `usage_logs`**
+```sql
+CREATE TABLE usage_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id),
+  app_id VARCHAR(50) NOT NULL,
+  date_key VARCHAR(10) NOT NULL,
+  duration_minutes DECIMAL(10, 2) DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
-**Collection: `timeRequests`**
-```javascript
-{
-  userId: string,
-  userEmail: string,
-  requestedMinutes: number,
-  reason: string,
-  status: 'pending' | 'approved' | 'rejected',
-  adminNote: string,
-  createdAt: timestamp,
-  processedAt: timestamp
-}
+**Table: `time_requests`**
+```sql
+CREATE TABLE time_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id),
+  requested_minutes INTEGER NOT NULL,
+  approved_minutes INTEGER,
+  reason TEXT,
+  status VARCHAR(20) DEFAULT 'pending',
+  date_key VARCHAR(10),
+  admin_note TEXT,
+  processed_by UUID REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  processed_at TIMESTAMP
+);
+```
+
+**Table: `email_verifications`**
+```sql
+CREATE TABLE email_verifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email VARCHAR(255) NOT NULL,
+  code VARCHAR(6) NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  used BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
 ## Menjalankan Aplikasi

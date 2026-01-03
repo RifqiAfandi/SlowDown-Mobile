@@ -2,6 +2,31 @@
   "expo": {
     "name": "SlowDown-App",
     "slug": "SlowDown-App",
-    "version": "1.0.0"
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "platforms": ["android"],
+    "android": {
+      "package": "com.slowdown.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#4A90D9"
+      },
+      "permissions": [
+        "PACKAGE_USAGE_STATS",
+        "SYSTEM_ALERT_WINDOW"
+      ]
+    },
+    "extra": {
+      "eas": {
+        "projectId": "your-project-id"
+      }
+    },
+    "plugins": [
+      [
+        "react-native-config",
+        {
+          "env": ".env"
+        }
+      ]
+    ]
   }
 }

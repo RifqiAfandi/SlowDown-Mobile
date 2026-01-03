@@ -4,6 +4,7 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authService } from '../services/authService';
 import { userService } from '../services/userService';
 import { Logger } from '../utils/logger';
@@ -19,6 +20,8 @@ const AuthContext = createContext({
   isAuthenticated: false,
   isAdmin: false,
   signIn: async () => {},
+  signInWithEmail: async () => {},
+  verifyEmailCode: async () => {},
   signOut: async () => {},
   refreshUserData: async () => {},
 });
@@ -37,43 +40,60 @@ export const AuthProvider = ({ children }) => {
     authService.configureGoogleSignIn();
   }, []);
 
-  // Listen to auth state changes
+  // Check for existing session on mount
   useEffect(() => {
-    const unsubscribe = authService.onAuthStateChanged(async (firebaseUser) => {
-      logger.debug('Auth state changed', { uid: firebaseUser?.uid });
-      
-      if (firebaseUser) {
-        setUser(firebaseUser);
+    const checkAuthStatus = async () => {
+      try {
+        logger.debug('Checking auth status');
         
-        // Fetch user data from Firestore
-        try {
-          const data = await userService.getUserById(firebaseUser.uid);
-          setUserData(data);
-          logger.info('User data loaded', { uid: firebaseUser.uid, role: data?.role });
-        } catch (error) {
-          logger.error('Failed to fetch user data', error);
+        const isAuth = await authService.isAuthenticated();
+        
+        if (isAuth) {
+          // Get stored user data
+          const storedUser = await authService.getCurrentUser();
+          
+          if (storedUser) {
+            setUser(storedUser);
+            
+            // Refresh user data from backend
+            try {
+              const freshData = await authService.refreshUserData();
+              setUserData(freshData);
+              logger.info('User data refreshed', { uid: freshData?.id, role: freshData?.role });
+            } catch (error) {
+              // Use stored data if refresh fails
+              setUserData(storedUser);
+              logger.warn('Failed to refresh user data, using stored data');
+            }
+          }
+        } else {
+          setUser(null);
+          setUserData(null);
         }
-      } else {
+      } catch (error) {
+        logger.error('Failed to check auth status', error);
         setUser(null);
         setUserData(null);
+      } finally {
+        setIsLoading(false);
       }
-      
-      setIsLoading(false);
-    });
+    };
 
-    return unsubscribe;
+    checkAuthStatus();
   }, []);
 
-  // Subscribe to user data changes
+  // Subscribe to user data changes (polling)
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!userData?.id) return;
 
-    const unsubscribe = userService.subscribeToUser(user.uid, (data) => {
-      setUserData(data);
+    const unsubscribe = userService.subscribeToUser(userData.id, (data) => {
+      if (data) {
+        setUserData(data);
+      }
     });
 
     return unsubscribe;
-  }, [user?.uid]);
+  }, [userData?.id]);
 
   /**
    * Sign in with Google
@@ -82,11 +102,48 @@ export const AuthProvider = ({ children }) => {
     try {
       setIsLoading(true);
       const data = await authService.signInWithGoogle();
+      setUser(data);
       setUserData(data);
       logger.info('Sign in successful');
       return data;
     } catch (error) {
       logger.error('Sign in failed', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  /**
+   * Sign in with Email (sends verification)
+   */
+  const signInWithEmail = useCallback(async (email) => {
+    try {
+      setIsLoading(true);
+      const result = await authService.signInWithEmail(email);
+      logger.info('Verification email sent');
+      return result;
+    } catch (error) {
+      logger.error('Email sign in failed', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  /**
+   * Verify email code
+   */
+  const verifyEmailCode = useCallback(async (email, code) => {
+    try {
+      setIsLoading(true);
+      const data = await authService.verifyEmailCode(email, code);
+      setUser(data);
+      setUserData(data);
+      logger.info('Email verification successful');
+      return data;
+    } catch (error) {
+      logger.error('Email verification failed', error);
       throw error;
     } finally {
       setIsLoading(false);
@@ -112,20 +169,20 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   /**
-   * Refresh user data from Firestore
+   * Refresh user data from backend
    */
   const refreshUserData = useCallback(async () => {
-    if (!user?.uid) return null;
+    if (!userData?.id) return null;
     
     try {
-      const data = await userService.getUserById(user.uid);
+      const data = await authService.refreshUserData();
       setUserData(data);
       return data;
     } catch (error) {
       logger.error('Failed to refresh user data', error);
       throw error;
     }
-  }, [user?.uid]);
+  }, [userData?.id]);
 
   const value = {
     user,
@@ -134,6 +191,8 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated: !!user,
     isAdmin: userData?.role === ROLES.ADMIN,
     signIn,
+    signInWithEmail,
+    verifyEmailCode,
     signOut,
     refreshUserData,
   };

@@ -1,26 +1,17 @@
 /**
  * User Service
- * Handles user CRUD operations in Firestore
+ * Handles user CRUD operations with PostgreSQL backend via API
  */
 
-import firestore from '@react-native-firebase/firestore';
+import { apiClient } from '../config/api';
 import { Logger } from '../utils/logger';
-import { COLLECTIONS, DEFAULT_DAILY_LIMIT, ROLES } from '../constants';
-import { sanitizeFirestoreData, isValidUserId, isValidDisplayName } from '../utils/validation';
-import { getCurrentWIBDate, getDateKey, needsDailyReset } from '../utils/dateUtils';
+import { DEFAULT_DAILY_LIMIT, ROLES } from '../constants';
+import { isValidUserId, isValidDisplayName } from '../utils/validation';
 
 const logger = Logger.create('UserService');
 
 /**
- * Get Firestore users collection reference
- * @returns {CollectionReference} Users collection reference
- */
-const getUsersCollection = () => {
-  return firestore().collection(COLLECTIONS.USERS);
-};
-
-/**
- * Create or update user in Firestore
+ * Create or update user
  * @param {Object} userData - User data to save
  * @returns {Promise<Object>} Created/updated user data
  */
@@ -30,62 +21,10 @@ export const createOrUpdateUser = async (userData) => {
       throw new Error('Invalid user ID');
     }
     
-    const userRef = getUsersCollection().doc(userData.uid);
-    const userDoc = await userRef.get();
+    const response = await apiClient.post('/users', userData);
     
-    const now = getCurrentWIBDate();
-    const dateKey = getDateKey(now);
-    
-    if (userDoc.exists) {
-      // Update existing user
-      const existingData = userDoc.data();
-      
-      // Check if daily reset is needed
-      const shouldReset = needsDailyReset(existingData.lastResetDate?.toDate());
-      
-      const updateData = {
-        lastLoginAt: firestore.FieldValue.serverTimestamp(),
-        displayName: userData.displayName || existingData.displayName,
-        photoURL: userData.photoURL || existingData.photoURL,
-      };
-      
-      // Reset daily usage if needed
-      if (shouldReset) {
-        updateData.todayUsedMinutes = 0;
-        updateData.lastResetDate = firestore.FieldValue.serverTimestamp();
-        updateData.currentDateKey = dateKey;
-        logger.info('Daily reset performed for user', { uid: userData.uid });
-      }
-      
-      await userRef.update(sanitizeFirestoreData(updateData));
-      
-      const updatedDoc = await userRef.get();
-      return { id: userData.uid, ...updatedDoc.data() };
-    } else {
-      // Create new user
-      const newUserData = {
-        uid: userData.uid,
-        email: userData.email,
-        displayName: userData.displayName || 'User',
-        photoURL: userData.photoURL || null,
-        role: userData.role || ROLES.USER,
-        dailyLimitMinutes: DEFAULT_DAILY_LIMIT,
-        bonusMinutes: 0,
-        todayUsedMinutes: 0,
-        isBlocked: false,
-        blockReason: null,
-        currentDateKey: dateKey,
-        lastResetDate: firestore.FieldValue.serverTimestamp(),
-        createdAt: firestore.FieldValue.serverTimestamp(),
-        lastLoginAt: firestore.FieldValue.serverTimestamp(),
-        pendingTimeRequest: null,
-      };
-      
-      await userRef.set(sanitizeFirestoreData(newUserData));
-      
-      logger.info('New user created', { uid: userData.uid, role: userData.role });
-      return { id: userData.uid, ...newUserData };
-    }
+    logger.info('User created/updated', { uid: userData.uid });
+    return response.data;
   } catch (error) {
     logger.error('Failed to create/update user', error);
     throw error;
@@ -103,14 +42,12 @@ export const getUserById = async (userId) => {
       throw new Error('Invalid user ID');
     }
     
-    const userDoc = await getUsersCollection().doc(userId).get();
-    
-    if (!userDoc.exists) {
+    const response = await apiClient.get(`/users/${userId}`);
+    return response.data;
+  } catch (error) {
+    if (error.response?.status === 404) {
       return null;
     }
-    
-    return { id: userDoc.id, ...userDoc.data() };
-  } catch (error) {
     logger.error('Failed to get user', error);
     throw error;
   }
@@ -122,15 +59,8 @@ export const getUserById = async (userId) => {
  */
 export const getAllUsers = async () => {
   try {
-    const snapshot = await getUsersCollection()
-      .where('role', '==', ROLES.USER)
-      .orderBy('displayName')
-      .get();
-    
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+    const response = await apiClient.get('/users');
+    return response.data;
   } catch (error) {
     logger.error('Failed to get all users', error);
     throw error;
@@ -144,15 +74,10 @@ export const getAllUsers = async () => {
  */
 export const searchUsers = async (searchTerm) => {
   try {
-    const normalizedSearch = searchTerm.toLowerCase().trim();
-    
-    // Firestore doesn't support full-text search, so we fetch all and filter
-    const allUsers = await getAllUsers();
-    
-    return allUsers.filter(user => 
-      user.displayName?.toLowerCase().includes(normalizedSearch) ||
-      user.email?.toLowerCase().includes(normalizedSearch)
-    );
+    const response = await apiClient.get('/users/search', {
+      params: { q: searchTerm },
+    });
+    return response.data;
   } catch (error) {
     logger.error('Failed to search users', error);
     throw error;
@@ -174,9 +99,8 @@ export const updateUserDisplayName = async (userId, displayName) => {
       throw new Error('Invalid display name');
     }
     
-    await getUsersCollection().doc(userId).update({
+    await apiClient.patch(`/users/${userId}`, {
       displayName: displayName.trim(),
-      updatedAt: firestore.FieldValue.serverTimestamp(),
     });
     
     logger.info('User display name updated', { userId, displayName });
@@ -198,26 +122,11 @@ export const updateUserUsage = async (userId, minutesUsed) => {
       throw new Error('Invalid user ID');
     }
     
-    const userRef = getUsersCollection().doc(userId);
-    
-    await firestore().runTransaction(async (transaction) => {
-      const userDoc = await transaction.get(userRef);
-      
-      if (!userDoc.exists) {
-        throw new Error('User not found');
-      }
-      
-      const userData = userDoc.data();
-      const newUsedMinutes = (userData.todayUsedMinutes || 0) + minutesUsed;
-      
-      transaction.update(userRef, {
-        todayUsedMinutes: newUsedMinutes,
-        updatedAt: firestore.FieldValue.serverTimestamp(),
-      });
+    const response = await apiClient.post(`/users/${userId}/usage`, {
+      minutesUsed,
     });
     
-    const updatedDoc = await userRef.get();
-    return { id: userId, ...updatedDoc.data() };
+    return response.data;
   } catch (error) {
     logger.error('Failed to update user usage', error);
     throw error;
@@ -239,9 +148,9 @@ export const addBonusTime = async (userId, minutes) => {
       throw new Error('Invalid minutes value');
     }
     
-    await getUsersCollection().doc(userId).update({
-      bonusMinutes: firestore.FieldValue.increment(minutes),
-      updatedAt: firestore.FieldValue.serverTimestamp(),
+    await apiClient.post(`/users/${userId}/bonus`, {
+      minutes,
+      action: 'add',
     });
     
     logger.info('Bonus time added', { userId, minutes });
@@ -266,22 +175,9 @@ export const reduceBonusTime = async (userId, minutes) => {
       throw new Error('Invalid minutes value');
     }
     
-    const userRef = getUsersCollection().doc(userId);
-    
-    await firestore().runTransaction(async (transaction) => {
-      const userDoc = await transaction.get(userRef);
-      
-      if (!userDoc.exists) {
-        throw new Error('User not found');
-      }
-      
-      const userData = userDoc.data();
-      const newBonusMinutes = Math.max(0, (userData.bonusMinutes || 0) - minutes);
-      
-      transaction.update(userRef, {
-        bonusMinutes: newBonusMinutes,
-        updatedAt: firestore.FieldValue.serverTimestamp(),
-      });
+    await apiClient.post(`/users/${userId}/bonus`, {
+      minutes,
+      action: 'reduce',
     });
     
     logger.info('Bonus time reduced', { userId, minutes });
@@ -303,11 +199,8 @@ export const blockUser = async (userId, reason = 'Blocked by admin') => {
       throw new Error('Invalid user ID');
     }
     
-    await getUsersCollection().doc(userId).update({
-      isBlocked: true,
-      blockReason: reason,
-      blockedAt: firestore.FieldValue.serverTimestamp(),
-      updatedAt: firestore.FieldValue.serverTimestamp(),
+    await apiClient.post(`/users/${userId}/block`, {
+      reason,
     });
     
     logger.info('User blocked', { userId, reason });
@@ -328,12 +221,7 @@ export const unblockUser = async (userId) => {
       throw new Error('Invalid user ID');
     }
     
-    await getUsersCollection().doc(userId).update({
-      isBlocked: false,
-      blockReason: null,
-      blockedAt: null,
-      updatedAt: firestore.FieldValue.serverTimestamp(),
-    });
+    await apiClient.post(`/users/${userId}/unblock`);
     
     logger.info('User unblocked', { userId });
   } catch (error) {
@@ -343,47 +231,74 @@ export const unblockUser = async (userId) => {
 };
 
 /**
- * Subscribe to user data changes
+ * Subscribe to user data changes (polling-based for API)
  * @param {string} userId - User ID
  * @param {Function} callback - Callback function(userData)
+ * @param {number} interval - Polling interval in ms (default: 30000)
  * @returns {Function} Unsubscribe function
  */
-export const subscribeToUser = (userId, callback) => {
-  return getUsersCollection().doc(userId).onSnapshot(
-    (doc) => {
-      if (doc.exists) {
-        callback({ id: doc.id, ...doc.data() });
-      } else {
-        callback(null);
+export const subscribeToUser = (userId, callback, interval = 30000) => {
+  let isActive = true;
+  
+  const fetchUser = async () => {
+    if (!isActive) return;
+    
+    try {
+      const userData = await getUserById(userId);
+      if (isActive) {
+        callback(userData);
       }
-    },
-    (error) => {
-      logger.error('User subscription error', error);
+    } catch (error) {
+      logger.error('User subscription fetch error', error);
     }
-  );
+  };
+  
+  // Initial fetch
+  fetchUser();
+  
+  // Set up polling
+  const intervalId = setInterval(fetchUser, interval);
+  
+  // Return unsubscribe function
+  return () => {
+    isActive = false;
+    clearInterval(intervalId);
+  };
 };
 
 /**
- * Subscribe to all users (for admin)
+ * Subscribe to all users (for admin, polling-based)
  * @param {Function} callback - Callback function(usersArray)
+ * @param {number} interval - Polling interval in ms (default: 30000)
  * @returns {Function} Unsubscribe function
  */
-export const subscribeToAllUsers = (callback) => {
-  return getUsersCollection()
-    .where('role', '==', ROLES.USER)
-    .orderBy('displayName')
-    .onSnapshot(
-      (snapshot) => {
-        const users = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
+export const subscribeToAllUsers = (callback, interval = 30000) => {
+  let isActive = true;
+  
+  const fetchUsers = async () => {
+    if (!isActive) return;
+    
+    try {
+      const users = await getAllUsers();
+      if (isActive) {
         callback(users);
-      },
-      (error) => {
-        logger.error('Users subscription error', error);
       }
-    );
+    } catch (error) {
+      logger.error('Users subscription fetch error', error);
+    }
+  };
+  
+  // Initial fetch
+  fetchUsers();
+  
+  // Set up polling
+  const intervalId = setInterval(fetchUsers, interval);
+  
+  // Return unsubscribe function
+  return () => {
+    isActive = false;
+    clearInterval(intervalId);
+  };
 };
 
 export const userService = {

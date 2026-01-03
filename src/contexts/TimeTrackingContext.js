@@ -75,26 +75,26 @@ export const TimeTrackingProvider = ({ children }) => {
 
   // Subscribe to today's usage
   useEffect(() => {
-    if (!userData?.uid || isAdmin) return;
+    if (!userData?.id || isAdmin) return;
 
-    const unsubscribe = usageService.subscribeToTodayUsage(userData.uid, (usage) => {
+    const unsubscribe = usageService.subscribeToTodayUsage(userData.id, (usage) => {
       setTodayUsage(usage);
     });
 
     return unsubscribe;
-  }, [userData?.uid, isAdmin]);
+  }, [userData?.id, isAdmin]);
 
   // Load weekly usage
   const loadWeeklyUsage = useCallback(async () => {
-    if (!userData?.uid || isAdmin) return;
+    if (!userData?.id || isAdmin) return;
 
     try {
-      const weekly = await usageService.getWeeklyUsage(userData.uid);
+      const weekly = await usageService.getWeeklyUsage(userData.id);
       setWeeklyUsage(weekly);
     } catch (error) {
       logger.error('Failed to load weekly usage', error);
     }
-  }, [userData?.uid, isAdmin]);
+  }, [userData?.id, isAdmin]);
 
   useEffect(() => {
     loadWeeklyUsage();
@@ -107,11 +107,11 @@ export const TimeTrackingProvider = ({ children }) => {
         logger.debug('App came to foreground');
         
         // Check if daily reset is needed
-        if (userData && needsDailyReset(userData.lastResetDate?.toDate())) {
+        if (userData && needsDailyReset(userData.lastResetDate)) {
           logger.info('Daily reset needed, refreshing user data');
           try {
             await userService.createOrUpdateUser({
-              uid: userData.uid,
+              uid: userData.id,
               email: userData.email,
               displayName: userData.displayName,
               photoURL: userData.photoURL,
@@ -135,20 +135,20 @@ export const TimeTrackingProvider = ({ children }) => {
    * @param {number} durationMinutes - Duration in minutes
    */
   const trackUsage = useCallback(async (appId, durationMinutes) => {
-    if (!userData?.uid || isAdmin) return;
+    if (!userData?.id || isAdmin) return;
     
     try {
-      // Log usage to Firestore
-      await usageService.logUsage(userData.uid, appId, durationMinutes);
+      // Log usage to backend
+      await usageService.logUsage(userData.id, appId, durationMinutes);
       
       // Update user's total usage
-      await userService.updateUserUsage(userData.uid, durationMinutes);
+      await userService.updateUserUsage(userData.id, durationMinutes);
       
       logger.debug('Usage tracked', { appId, durationMinutes });
     } catch (error) {
       logger.error('Failed to track usage', error);
     }
-  }, [userData?.uid, isAdmin]);
+  }, [userData?.id, isAdmin]);
 
   /**
    * Start tracking for an app
@@ -185,11 +185,11 @@ export const TimeTrackingProvider = ({ children }) => {
   const refreshUsage = useCallback(async () => {
     await loadWeeklyUsage();
     
-    if (userData?.uid) {
-      const daily = await usageService.getDailyUsage(userData.uid);
+    if (userData?.id) {
+      const daily = await usageService.getDailyUsage(userData.id);
       setTodayUsage(daily);
     }
-  }, [userData?.uid, loadWeeklyUsage]);
+  }, [userData?.id, loadWeeklyUsage]);
 
   const value = {
     remainingMinutes,

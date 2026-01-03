@@ -3,19 +3,20 @@
  * Contains all constant values used throughout the app
  */
 
+import { ADMIN_EMAIL as ENV_ADMIN_EMAIL, APP_CONFIG } from '../config/env';
+
 // Admin email - only this email gets admin role
-export const ADMIN_EMAIL = 'rifqitriafandi.2002@gmail.com';
+export const ADMIN_EMAIL = ENV_ADMIN_EMAIL;
 
 // Default daily time limit in minutes
-export const DEFAULT_DAILY_LIMIT = 30;
+export const DEFAULT_DAILY_LIMIT = APP_CONFIG.defaultDailyLimit;
 
-// Social media apps to track and block
+// Social media apps to track and block (Android only)
 export const SOCIAL_MEDIA_APPS = [
   {
     id: 'instagram',
     name: 'Instagram',
     packageName: 'com.instagram.android',
-    bundleId: 'com.burbn.instagram',
     icon: 'instagram',
     color: '#E1306C',
   },
@@ -23,7 +24,6 @@ export const SOCIAL_MEDIA_APPS = [
     id: 'twitter',
     name: 'Twitter/X',
     packageName: 'com.twitter.android',
-    bundleId: 'com.atebits.Tweetie2',
     icon: 'twitter',
     color: '#1DA1F2',
   },
@@ -31,7 +31,6 @@ export const SOCIAL_MEDIA_APPS = [
     id: 'reddit',
     name: 'Reddit',
     packageName: 'com.reddit.frontpage',
-    bundleId: 'com.reddit.Reddit',
     icon: 'reddit',
     color: '#FF4500',
   },
@@ -39,7 +38,6 @@ export const SOCIAL_MEDIA_APPS = [
     id: 'youtube',
     name: 'YouTube',
     packageName: 'com.google.android.youtube',
-    bundleId: 'com.google.ios.youtube',
     icon: 'youtube',
     color: '#FF0000',
   },
@@ -47,7 +45,6 @@ export const SOCIAL_MEDIA_APPS = [
     id: 'threads',
     name: 'Threads',
     packageName: 'com.instagram.barcelona',
-    bundleId: 'com.burbn.barcelona',
     icon: 'at',
     color: '#000000',
   },
@@ -122,12 +119,18 @@ export const BORDER_RADIUS = {
 };
 
 // Timezone - WIB (UTC+7)
-export const TIMEZONE_OFFSET = 7;
+export const TIMEZONE_OFFSET = APP_CONFIG.timezoneOffset;
 
-// Firestore collections
-export const COLLECTIONS = {
-  USERS: 'users',
-  USAGE_LOGS: 'usageLogs',
-  TIME_REQUESTS: 'timeRequests',
-  BLOCKED_APPS: 'blockedApps',
+// API Endpoints (for reference)
+export const API_ENDPOINTS = {
+  AUTH: {
+    GOOGLE: '/auth/google',
+    EMAIL_SEND: '/auth/email/send-verification',
+    EMAIL_VERIFY: '/auth/email/verify',
+    LOGOUT: '/auth/logout',
+    ME: '/auth/me',
+  },
+  USERS: '/users',
+  USAGE: '/usage',
+  TIME_REQUESTS: '/time-requests',
 };
