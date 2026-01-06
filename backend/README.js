@@ -7,9 +7,10 @@
  * The backend should be built using Node.js/Express with PostgreSQL database.
  * 
  * Database: PostgreSQL
- * - DB_NAME: precision_agriculture
- * - DB_USER: postgres
- * - DB_PASSWORD: 2002
+ * All credentials should be stored in .env file:
+ * - DB_NAME: from environment
+ * - DB_USER: from environment
+ * - DB_PASSWORD: from environment (never hardcode!)
  * - DB_HOST: localhost
  * - DB_PORT: 5432
  * 

@@ -27,10 +27,16 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
+# local env files - SECURITY: Never commit these!
 .env
 .env*.local
 .env.production
+backend/.env
+
+# Firebase/Google - SECURITY: Contains API keys
+# Uncomment if this is a public repo:
+# google-services.json
+# android/app/google-services.json
 
 # typescript
 *.tsbuildinfo

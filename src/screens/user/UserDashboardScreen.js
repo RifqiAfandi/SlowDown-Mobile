@@ -3,7 +3,7 @@
  * Main screen showing remaining time and quick stats
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   ScrollView,
   RefreshControl,
   Alert,
+  TouchableOpacity,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -37,18 +38,38 @@ const UserDashboardScreen = () => {
     isTimeUp,
     isBlocked,
     todayUsage,
+    hasPermission,
+    checkPermission,
+    requestPermission,
     refreshUsage,
+    syncUsageFromDevice,
   } = useTimeTracking();
 
   const [refreshing, setRefreshing] = useState(false);
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [submittingRequest, setSubmittingRequest] = useState(false);
 
+  // Check permission on mount and when app comes back
+  useEffect(() => {
+    checkPermission();
+  }, [checkPermission]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    await checkPermission();
     await refreshUsage();
     setRefreshing(false);
-  }, [refreshUsage]);
+  }, [refreshUsage, checkPermission]);
+
+  const handleRequestPermission = async () => {
+    await requestPermission();
+    // Show alert to guide user
+    Alert.alert(
+      'Izin Diperlukan',
+      'Silakan aktifkan izin "Usage Access" untuk aplikasi SlowDown di halaman Settings yang terbuka, lalu kembali ke aplikasi.',
+      [{ text: 'OK' }]
+    );
+  };
 
   const handleRequestTime = async (minutes, reason) => {
     try {
@@ -74,6 +95,27 @@ const UserDashboardScreen = () => {
 
   const canRequestTime = isTimeUp && !userData?.pendingTimeRequest && !isBlocked;
 
+  // Permission warning banner
+  const PermissionBanner = () => (
+    <Card style={styles.permissionCard}>
+      <View style={styles.permissionContent}>
+        <Icon name="shield-alert" size={40} color={COLORS.warning} />
+        <View style={styles.permissionText}>
+          <Text style={styles.permissionTitle}>Izin Diperlukan</Text>
+          <Text style={styles.permissionDescription}>
+            Untuk melacak penggunaan media sosial, aplikasi memerlukan izin "Usage Access".
+          </Text>
+        </View>
+      </View>
+      <Button
+        title="Beri Izin"
+        onPress={handleRequestPermission}
+        variant="primary"
+        style={styles.permissionButton}
+      />
+    </Card>
+  );
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <Header
@@ -97,6 +139,9 @@ const UserDashboardScreen = () => {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
+        {/* Permission Warning */}
+        {!hasPermission && <PermissionBanner />}
+
         {/* Time Display Card */}
         <Card style={styles.timeCard} variant="elevated">
           <TimeDisplay
@@ -279,6 +324,36 @@ const styles = StyleSheet.create({
     fontSize: FONTS.sizes.sm,
     color: COLORS.gray,
     lineHeight: 20,
+  },
+  permissionCard: {
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+    backgroundColor: COLORS.warning + '10',
+    borderWidth: 1,
+    borderColor: COLORS.warning,
+  },
+  permissionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  permissionText: {
+    flex: 1,
+    marginLeft: SPACING.md,
+  },
+  permissionTitle: {
+    fontSize: FONTS.sizes.md,
+    fontWeight: '600',
+    color: COLORS.dark,
+    marginBottom: SPACING.xs,
+  },
+  permissionDescription: {
+    fontSize: FONTS.sizes.sm,
+    color: COLORS.gray,
+    lineHeight: 18,
+  },
+  permissionButton: {
+    marginTop: SPACING.sm,
   },
 });
 

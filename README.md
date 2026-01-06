@@ -22,12 +22,14 @@ SlowDown adalah aplikasi mobile yang membantu pengguna mengurangi waktu yang dih
 - 📝 Request tambahan waktu ke admin
 - 🚫 Blocking overlay ketika waktu habis
 
-### Untuk Admin (rifqitriafandi.2002@gmail.com)
+### Untuk Admin
 - 👥 Melihat daftar semua pengguna
 - 📈 Dashboard statistik global
 - ⏰ Menambah/mengurangi waktu pengguna
 - ✅ Approve/reject request tambahan waktu
 - 🔓 Block/unblock pengguna secara manual
+
+> Note: Set admin email in `.env` file (ADMIN_EMAIL variable)
 
 ## Tech Stack
 
@@ -109,21 +111,24 @@ cp .env.example .env
 2. Update konfigurasi di `.env`:
 ```env
 # Database Configuration
-DB_NAME=precision_agriculture
+DB_NAME=slow_down
 DB_USER=postgres
-DB_PASSWORD=2002
+DB_PASSWORD=your_secure_password
 DB_HOST=localhost
 DB_PORT=5432
 
 # API Configuration
-API_BASE_URL=http://localhost:3000/api
+# Use your local IP for device testing
+API_BASE_URL=http://YOUR_LOCAL_IP:3000/api
 
 # Admin Configuration
-ADMIN_EMAIL=rifqitriafandi.2002@gmail.com
+ADMIN_EMAIL=your_admin_email@gmail.com
 
 # Google OAuth Configuration
 GOOGLE_WEB_CLIENT_ID=YOUR_WEB_CLIENT_ID.apps.googleusercontent.com
 ```
+
+> ⚠️ **SECURITY WARNING**: Never commit `.env` file with real credentials!
 
 ### 4. Setup Backend API Server
 
@@ -259,8 +264,9 @@ Aplikasi menggunakan timezone **WIB (UTC+7)** untuk:
 
 ## Keamanan
 
-- Hanya email `rifqitriafandi.2002@gmail.com` yang memiliki akses admin
-- Semua request ke Firestore divalidasi dengan Firebase Rules
+- Admin email dikonfigurasi via environment variable `ADMIN_EMAIL`
+- Semua kredensial sensitif disimpan di `.env` (tidak di-commit ke git)
+- JWT secret harus di-generate dengan `openssl rand -hex 64`
 - Token autentikasi di-refresh otomatis
 
 ## Troubleshooting

@@ -6,14 +6,15 @@
     "orientation": "portrait",
     "platforms": ["android"],
     "android": {
-      "package": "com.slowdown.app",
+      "package": "com.slowdownapp",
       "adaptiveIcon": {
         "backgroundColor": "#4A90D9"
       },
       "permissions": [
         "PACKAGE_USAGE_STATS",
         "SYSTEM_ALERT_WINDOW"
-      ]
+      ],
+      "googleServicesFile": "./android/app/google-services.json"
     },
     "extra": {
       "eas": {
@@ -22,9 +23,11 @@
     },
     "plugins": [
       [
-        "react-native-config",
+        "expo-build-properties",
         {
-          "env": ".env"
+          "android": {
+            "usesCleartextTraffic": true
+          }
         }
       ]
     ]

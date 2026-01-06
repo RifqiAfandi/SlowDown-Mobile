@@ -58,12 +58,15 @@ export const isValidTimeInMinutes = (minutes) => {
 };
 
 /**
- * Validate user ID format
+ * Validate user ID format (supports UUID and custom IDs)
  * @param {string} userId - User ID to validate
  * @returns {boolean} True if valid user ID
  */
 export const isValidUserId = (userId) => {
-  return typeof userId === 'string' && userId.length > 0 && userId.length <= 128;
+  if (typeof userId !== 'string' || userId.length === 0) return false;
+  // Support UUID format (from backend) and custom string IDs
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(userId) || (userId.length > 0 && userId.length <= 128);
 };
 
 /**

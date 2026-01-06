@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
 import { COLORS } from '../constants';
 
@@ -19,7 +19,7 @@ import LoadingScreen from '../screens/LoadingScreen';
 import BlockingOverlay from '../screens/BlockingOverlay';
 import UserDetailScreen from '../screens/admin/UserDetailScreen';
 
-const Stack = createStackNavigator();
+const Stack = createNativeStackNavigator();
 
 /**
  * Auth Stack Navigator

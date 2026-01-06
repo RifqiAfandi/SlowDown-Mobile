@@ -4,12 +4,13 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Alert } from 'react-native';
 import { useAuth } from './AuthContext';
-import { userService } from '../services/userService';
 import { usageService } from '../services/usageService';
+import usageStatsNative from '../services/usageStatsNative';
+import { apiClient } from '../config/api';
 import { Logger } from '../utils/logger';
-import { getCurrentWIBDate, needsDailyReset, getDateKey } from '../utils/dateUtils';
+import { getCurrentWIBDate, getDateKey } from '../utils/dateUtils';
 import { DEFAULT_DAILY_LIMIT } from '../constants';
 
 const logger = Logger.create('TimeTrackingContext');
@@ -25,8 +26,11 @@ const TimeTrackingContext = createContext({
   blockReason: null,
   todayUsage: null,
   weeklyUsage: [],
-  trackUsage: async () => {},
+  hasPermission: false,
+  checkPermission: async () => {},
+  requestPermission: async () => {},
   refreshUsage: async () => {},
+  syncUsageFromDevice: async () => {},
 });
 
 /**
@@ -43,58 +47,99 @@ export const TimeTrackingProvider = ({ children }) => {
   const [blockReason, setBlockReason] = useState(null);
   const [todayUsage, setTodayUsage] = useState(null);
   const [weeklyUsage, setWeeklyUsage] = useState([]);
+  const [hasPermission, setHasPermission] = useState(false);
   
   const appState = useRef(AppState.currentState);
-  const trackingStartTime = useRef(null);
-  const currentApp = useRef(null);
+  const syncIntervalRef = useRef(null);
 
   // Calculate total allowed minutes
   const totalAllowedMinutes = (userData?.dailyLimitMinutes || DEFAULT_DAILY_LIMIT) + bonusMinutes;
 
+  // Check usage stats permission
+  const checkPermission = useCallback(async () => {
+    const granted = await usageStatsNative.hasUsageStatsPermission();
+    setHasPermission(granted);
+    return granted;
+  }, []);
+
+  // Request usage stats permission
+  const requestPermission = useCallback(async () => {
+    await usageStatsNative.requestUsageStatsPermission();
+    // Permission is granted in settings, we'll check again when app comes back
+  }, []);
+
+  // Sync usage data from device to backend
+  const syncUsageFromDevice = useCallback(async () => {
+    if (!userData?.id || isAdmin || !hasPermission) return;
+
+    try {
+      const deviceUsage = await usageStatsNative.getSocialMediaUsageToday();
+      logger.info('Device usage fetched', deviceUsage);
+
+      // Sync to backend
+      const response = await apiClient.post('/usage/sync', {
+        date: getDateKey(getCurrentWIBDate()),
+        totalMinutes: deviceUsage.totalMinutes,
+        appUsage: deviceUsage.appUsage,
+      });
+
+      const usage = response.data.usage;
+      
+      // Update local state
+      setUsedMinutes(usage.totalMinutes);
+      setTodayUsage({
+        totalMinutes: usage.totalMinutes,
+        appUsage: usage.appUsage,
+      });
+
+      const remaining = Math.max(0, usage.dailyLimit - usage.totalMinutes);
+      setRemainingMinutes(remaining);
+      setIsTimeUp(usage.isLimitExceeded);
+
+      logger.info('Usage synced', { 
+        totalMinutes: usage.totalMinutes, 
+        remaining,
+        isLimitExceeded: usage.isLimitExceeded 
+      });
+
+      return usage;
+    } catch (error) {
+      logger.error('Failed to sync usage from device', error);
+      throw error;
+    }
+  }, [userData?.id, isAdmin, hasPermission]);
+
+  // Initial permission check
+  useEffect(() => {
+    checkPermission();
+  }, [checkPermission]);
+
   // Update state from user data
   useEffect(() => {
     if (userData) {
-      setUsedMinutes(userData.todayUsedMinutes || 0);
       setBonusMinutes(userData.bonusMinutes || 0);
       setIsBlocked(userData.isBlocked || false);
       setBlockReason(userData.blockReason || null);
       
-      const totalAllowed = (userData.dailyLimitMinutes || DEFAULT_DAILY_LIMIT) + (userData.bonusMinutes || 0);
-      const remaining = Math.max(0, totalAllowed - (userData.todayUsedMinutes || 0));
-      
-      setRemainingMinutes(remaining);
-      setIsTimeUp(remaining <= 0);
-      
-      logger.debug('Time state updated', { 
-        used: userData.todayUsedMinutes, 
-        remaining, 
-        isTimeUp: remaining <= 0 
+      logger.debug('User data updated', { 
+        dailyLimit: userData.dailyLimitMinutes,
+        isBlocked: userData.isBlocked
       });
     }
   }, [userData]);
 
-  // Subscribe to today's usage
-  useEffect(() => {
-    if (!userData?.id || isAdmin) return;
-
-    const unsubscribe = usageService.subscribeToTodayUsage(userData.id, (usage) => {
-      setTodayUsage(usage);
-    });
-
-    return unsubscribe;
-  }, [userData?.id, isAdmin]);
-
-  // Load weekly usage
+  // Load weekly usage from device
   const loadWeeklyUsage = useCallback(async () => {
-    if (!userData?.id || isAdmin) return;
+    if (!hasPermission) return;
 
     try {
-      const weekly = await usageService.getWeeklyUsage(userData.id);
-      setWeeklyUsage(weekly);
+      const history = await usageStatsNative.getUsageHistory(7);
+      setWeeklyUsage(history);
+      logger.debug('Weekly usage loaded', { days: history.length });
     } catch (error) {
       logger.error('Failed to load weekly usage', error);
     }
-  }, [userData?.id, isAdmin]);
+  }, [hasPermission]);
 
   useEffect(() => {
     loadWeeklyUsage();
@@ -106,19 +151,13 @@ export const TimeTrackingProvider = ({ children }) => {
       if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
         logger.debug('App came to foreground');
         
-        // Check if daily reset is needed
-        if (userData && needsDailyReset(userData.lastResetDate)) {
-          logger.info('Daily reset needed, refreshing user data');
+        // Refresh usage data when app comes to foreground
+        if (userData?.id && !isAdmin) {
           try {
-            await userService.createOrUpdateUser({
-              uid: userData.id,
-              email: userData.email,
-              displayName: userData.displayName,
-              photoURL: userData.photoURL,
-              role: userData.role,
-            });
+            await refreshUsage();
+            logger.info('Usage data refreshed on foreground');
           } catch (error) {
-            logger.error('Failed to perform daily reset', error);
+            logger.error('Failed to refresh usage data', error);
           }
         }
       }
@@ -127,7 +166,7 @@ export const TimeTrackingProvider = ({ children }) => {
     });
 
     return () => subscription.remove();
-  }, [userData]);
+  }, [userData, isAdmin, refreshUsage]);
 
   /**
    * Track app usage
@@ -153,43 +192,36 @@ export const TimeTrackingProvider = ({ children }) => {
   /**
    * Start tracking for an app
    * @param {string} appId - App ID to track
-   */
-  const startTracking = useCallback((appId) => {
-    trackingStartTime.current = Date.now();
-    currentApp.current = appId;
-    logger.debug('Started tracking', { appId });
-  }, []);
+  // Auto-sync usage periodically when app is active
+  useEffect(() => {
+    if (!userData?.id || isAdmin || !hasPermission) return;
 
-  /**
-   * Stop tracking and record usage
-   */
-  const stopTracking = useCallback(async () => {
-    if (!trackingStartTime.current || !currentApp.current) return;
+    // Sync immediately
+    syncUsageFromDevice();
 
-    const endTime = Date.now();
-    const durationMs = endTime - trackingStartTime.current;
-    const durationMinutes = durationMs / 60000;
+    // Set up periodic sync (every 60 seconds)
+    syncIntervalRef.current = setInterval(() => {
+      syncUsageFromDevice();
+    }, 60000);
 
-    if (durationMinutes >= 0.1) { // Only track if at least 6 seconds
-      await trackUsage(currentApp.current, durationMinutes);
-    }
-
-    trackingStartTime.current = null;
-    currentApp.current = null;
-    logger.debug('Stopped tracking');
-  }, [trackUsage]);
+    return () => {
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+      }
+    };
+  }, [userData?.id, isAdmin, hasPermission, syncUsageFromDevice]);
 
   /**
    * Refresh usage data
    */
   const refreshUsage = useCallback(async () => {
+    await checkPermission();
     await loadWeeklyUsage();
     
-    if (userData?.id) {
-      const daily = await usageService.getDailyUsage(userData.id);
-      setTodayUsage(daily);
+    if (hasPermission) {
+      await syncUsageFromDevice();
     }
-  }, [userData?.id, loadWeeklyUsage]);
+  }, [checkPermission, loadWeeklyUsage, hasPermission, syncUsageFromDevice]);
 
   const value = {
     remainingMinutes,
@@ -201,10 +233,11 @@ export const TimeTrackingProvider = ({ children }) => {
     blockReason,
     todayUsage,
     weeklyUsage,
-    trackUsage,
-    startTracking,
-    stopTracking,
+    hasPermission,
+    checkPermission,
+    requestPermission,
     refreshUsage,
+    syncUsageFromDevice,
   };
 
   return (
