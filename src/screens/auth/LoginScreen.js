@@ -21,6 +21,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { useAuth } from '../../contexts/AuthContext';
 import { COLORS, FONTS, SPACING } from '../../constants';
 import { Button } from '../../components';
+import { WelcomeIllustration } from '../../components/illustrations';
 import { Logger } from '../../utils/logger';
 import { isValidEmail, isValidVerificationCode } from '../../utils/validation';
 
@@ -50,6 +51,10 @@ const LoginScreen = () => {
         message = 'Login dibatalkan.';
       } else if (error.code === 'PLAY_SERVICES_NOT_AVAILABLE') {
         message = 'Google Play Services tidak tersedia. Pastikan perangkat Anda mendukung Google Play Services.';
+      } else if (error.response?.data?.error) {
+        message = error.response.data.error;
+      } else if (error.message) {
+        message = error.message;
       }
       
       Alert.alert('Login Gagal', message);
@@ -240,7 +245,7 @@ const LoginScreen = () => {
         <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
         
         <View style={styles.header}>
-          <Text style={styles.logo}>🐢</Text>
+          <WelcomeIllustration size={180} color={COLORS.primary} />
           <Text style={styles.appName}>SlowDown</Text>
           <Text style={styles.tagline}>Kurangi doom scrolling, tingkatkan produktivitas</Text>
         </View>
@@ -273,17 +278,14 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    paddingTop: SPACING.xxl,
-    paddingBottom: SPACING.xl,
-  },
-  logo: {
-    fontSize: 80,
-    marginBottom: SPACING.md,
+    paddingTop: SPACING.xl,
+    paddingBottom: SPACING.md,
   },
   appName: {
     fontSize: FONTS.sizes.xxxl + 8,
     fontWeight: 'bold',
     color: COLORS.primary,
+    marginTop: SPACING.md,
     marginBottom: SPACING.xs,
   },
   tagline: {

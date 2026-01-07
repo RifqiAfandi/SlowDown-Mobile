@@ -37,13 +37,37 @@ export const signInWithGoogle = async () => {
     
     // Get user's ID token
     const signInResult = await GoogleSignin.signIn();
-    const { idToken, user: googleUser } = signInResult.data || signInResult;
+    logger.debug('SignIn result structure:', Object.keys(signInResult));
     
-    if (!idToken) {
-      throw new Error('No ID token received from Google Sign-In');
+    // Handle different response formats (v13+ returns data wrapper)
+    let idToken, googleUser;
+    
+    if (signInResult.data) {
+      // New format (v13+): { type: 'success', data: { idToken, user } }
+      idToken = signInResult.data.idToken;
+      googleUser = signInResult.data.user;
+      logger.debug('Using new response format (v13+)');
+    } else if (signInResult.idToken) {
+      // Old format: { idToken, user }
+      idToken = signInResult.idToken;
+      googleUser = signInResult.user;
+      logger.debug('Using old response format');
+    } else {
+      logger.error('Unknown response format', JSON.stringify(signInResult));
+      throw new Error('Unknown Google Sign-In response format');
     }
     
-    logger.info('Google Sign-In successful, authenticating with backend');
+    if (!idToken) {
+      logger.error('No idToken in response. Full result:', JSON.stringify(signInResult, null, 2));
+      throw new Error('No ID token received from Google Sign-In. Please try again.');
+    }
+    
+    if (!googleUser) {
+      logger.error('No user in response');
+      throw new Error('No user data received from Google Sign-In');
+    }
+    
+    logger.info('Google Sign-In successful, authenticating with backend', { email: googleUser?.email });
     
     // Send token to backend for verification and user creation
     const response = await apiClient.post('/auth/google', {
@@ -54,6 +78,11 @@ export const signInWithGoogle = async () => {
     });
     
     const { token, user } = response.data;
+    
+    if (!token || !user) {
+      logger.error('Invalid response from backend', response.data);
+      throw new Error('Invalid response from server');
+    }
     
     // Store auth token
     await setAuthToken(token);
@@ -66,6 +95,11 @@ export const signInWithGoogle = async () => {
     return user;
   } catch (error) {
     logger.error('Google Sign-In failed', error);
+    
+    // Log more details for debugging
+    if (error.response) {
+      logger.error('Backend error:', error.response.status, error.response.data);
+    }
     
     // Handle specific Google Sign-In errors
     if (error.code === statusCodes.SIGN_IN_CANCELLED) {

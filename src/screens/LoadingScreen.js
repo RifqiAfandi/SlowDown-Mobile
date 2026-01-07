@@ -4,14 +4,17 @@
  */
 
 import React from 'react';
-import { View, Text, StyleSheet, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { COLORS, FONTS, SPACING } from '../constants';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
 const LoadingScreen = () => {
   return (
     <View style={styles.container}>
       <View style={styles.logoContainer}>
-        <Text style={styles.logo}>🐢</Text>
+        <View style={styles.iconWrapper}>
+          <Icon name="timer-sand" size={48} color={COLORS.primary} />
+        </View>
         <Text style={styles.appName}>SlowDown</Text>
       </View>
       
@@ -33,8 +36,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: SPACING.xxl,
   },
-  logo: {
-    fontSize: 72,
+  iconWrapper: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: `${COLORS.primary}15`,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: SPACING.md,
   },
   appName: {

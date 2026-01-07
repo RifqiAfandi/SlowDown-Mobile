@@ -1,52 +1,46 @@
 /**
  * Environment Configuration
- * Configuration values loaded from .env file
- * SECURITY: Never hardcode sensitive data - always use environment variables
+ * Configuration values loaded from .env file via react-native-dotenv
+ * SECURITY: Sensitive data is stored in .env (not committed to git)
  */
 
-import Constants from 'expo-constants';
+import {
+  API_BASE_URL,
+  ADMIN_EMAIL as ENV_ADMIN_EMAIL,
+  GOOGLE_WEB_CLIENT_ID as ENV_GOOGLE_WEB_CLIENT_ID,
+  APP_NAME,
+  DEFAULT_DAILY_LIMIT,
+  TIMEZONE_OFFSET,
+} from '@env';
 
-// Get environment variables from expo-constants (loaded from .env by expo)
-const getEnvVar = (key, defaultValue = '') => {
-  // Try to get from process.env (loaded by babel-plugin-dotenv or expo)
-  const value = process.env[key] || 
-                Constants.expoConfig?.extra?.[key] || 
-                defaultValue;
-  return value;
-};
-
-// API Configuration - loaded from environment
+// API Configuration
 export const API_CONFIG = {
-  baseUrl: getEnvVar('API_BASE_URL', 'http://localhost:3000/api'),
+  baseUrl: API_BASE_URL || 'http://localhost:3000/api',
 };
 
-// Admin Configuration - loaded from environment
-export const ADMIN_EMAIL = getEnvVar('ADMIN_EMAIL', '');
+// Admin Configuration
+export const ADMIN_EMAIL = ENV_ADMIN_EMAIL || '';
 
-// Google OAuth Configuration - loaded from environment
-export const GOOGLE_WEB_CLIENT_ID = getEnvVar('GOOGLE_WEB_CLIENT_ID', '');
+// Google OAuth Configuration  
+export const GOOGLE_WEB_CLIENT_ID = ENV_GOOGLE_WEB_CLIENT_ID || '';
 
-// App Configuration - loaded from environment
+// App Configuration
 export const APP_CONFIG = {
-  name: getEnvVar('APP_NAME', 'SlowDown'),
-  defaultDailyLimit: parseInt(getEnvVar('DEFAULT_DAILY_LIMIT', '30'), 10),
-  timezoneOffset: parseInt(getEnvVar('TIMEZONE_OFFSET', '7'), 10),
+  name: APP_NAME || 'SlowDown',
+  defaultDailyLimit: parseInt(DEFAULT_DAILY_LIMIT || '30', 10),
+  timezoneOffset: parseInt(TIMEZONE_OFFSET || '7', 10),
 };
 
-// Validate required environment variables
-const validateEnv = () => {
-  const required = ['GOOGLE_WEB_CLIENT_ID', 'API_BASE_URL'];
-  const missing = required.filter(key => !getEnvVar(key));
+// Validate required environment variables in development
+if (__DEV__) {
+  const missing = [];
+  if (!GOOGLE_WEB_CLIENT_ID) missing.push('GOOGLE_WEB_CLIENT_ID');
+  if (!API_BASE_URL) missing.push('API_BASE_URL');
   
-  if (missing.length > 0 && __DEV__) {
+  if (missing.length > 0) {
     console.warn(`[ENV] Missing environment variables: ${missing.join(', ')}`);
     console.warn('[ENV] Make sure .env file is configured correctly');
   }
-};
-
-// Run validation in development
-if (__DEV__) {
-  validateEnv();
 }
 
 export default {

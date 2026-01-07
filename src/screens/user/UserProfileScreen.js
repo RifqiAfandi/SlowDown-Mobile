@@ -10,7 +10,6 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
-  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -56,18 +55,6 @@ const UserProfileScreen = () => {
     );
   };
 
-  const handleContact = () => {
-    Linking.openURL('mailto:support@slowdown.app');
-  };
-
-  const handlePrivacy = () => {
-    Linking.openURL('https://slowdown.app/privacy');
-  };
-
-  const handleTerms = () => {
-    Linking.openURL('https://slowdown.app/terms');
-  };
-
   const memberSince = userData?.createdAt?.toDate
     ? formatDate(userData.createdAt.toDate(), 'dd MMMM yyyy')
     : '-';
@@ -85,11 +72,18 @@ const UserProfileScreen = () => {
         <Card style={styles.profileCard} variant="elevated">
           <Avatar
             source={userData?.photoURL ? { uri: userData.photoURL } : null}
-            name={userData?.displayName}
+            name={userData?.displayName || userData?.email}
             size="xlarge"
           />
-          <Text style={styles.userName}>{userData?.displayName || 'User'}</Text>
-          <Text style={styles.userEmail}>{userData?.email}</Text>
+          <Text style={styles.userName}>
+            {userData?.displayName || userData?.email?.split('@')[0] || 'User'}
+          </Text>
+          {userData?.displayName && (
+            <Text style={styles.userEmail}>{userData?.email}</Text>
+          )}
+          {!userData?.displayName && (
+            <Text style={styles.userEmailOnly}>{userData?.email}</Text>
+          )}
           
           <View style={styles.memberInfo}>
             <Icon name="calendar-check" size={16} color={COLORS.gray} />
@@ -123,37 +117,20 @@ const UserProfileScreen = () => {
           </View>
         </Card>
 
-        {/* Settings Section */}
-        <Card style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Bantuan</Text>
-          
-          <MenuItem
-            icon="email-outline"
-            title="Hubungi Kami"
-            onPress={handleContact}
-          />
-          <MenuItem
-            icon="shield-account"
-            title="Kebijakan Privasi"
-            onPress={handlePrivacy}
-          />
-          <MenuItem
-            icon="file-document-outline"
-            title="Syarat & Ketentuan"
-            onPress={handleTerms}
-          />
-        </Card>
-
         {/* App Info */}
         <Card style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Tentang Aplikasi</Text>
-          
-          <View style={styles.appInfo}>
-            <Text style={styles.appInfoText}>SlowDown v1.0.0</Text>
-            <Text style={styles.appInfoSubtext}>
-              Kurangi doom scrolling, tingkatkan produktivitas
-            </Text>
+          <View style={styles.appInfoContainer}>
+            <View style={styles.appIconContainer}>
+              <Icon name="timer-sand" size={32} color={COLORS.primary} />
+            </View>
+            <View style={styles.appInfoTextContainer}>
+              <Text style={styles.appInfoText}>SlowDown</Text>
+              <Text style={styles.appInfoVersion}>Versi 1.0.0</Text>
+            </View>
           </View>
+          <Text style={styles.appInfoSubtext}>
+            Kurangi doom scrolling, tingkatkan produktivitas dan kesehatan mental Anda.
+          </Text>
         </Card>
 
         {/* Sign Out Button */}
@@ -171,17 +148,6 @@ const UserProfileScreen = () => {
     </View>
   );
 };
-
-const MenuItem = ({ icon, title, onPress, showBadge = false }) => (
-  <View style={styles.menuItem}>
-    <Icon name={icon} size={22} color={COLORS.gray} />
-    <Text style={styles.menuTitle}>{title}</Text>
-    <View style={styles.menuRight}>
-      {showBadge && <View style={styles.badge} />}
-      <Icon name="chevron-right" size={20} color={COLORS.lightGray} />
-    </View>
-  </View>
-);
 
 const styles = StyleSheet.create({
   container: {
@@ -210,6 +176,11 @@ const styles = StyleSheet.create({
     fontSize: FONTS.sizes.md,
     color: COLORS.gray,
     marginTop: 4,
+  },
+  userEmailOnly: {
+    fontSize: FONTS.sizes.sm,
+    color: COLORS.gray,
+    marginTop: 2,
   },
   memberInfo: {
     flexDirection: 'row',
@@ -252,43 +223,37 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.dark,
   },
-  menuItem: {
+  appInfoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: SPACING.sm + 4,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.ultraLight,
+    marginBottom: SPACING.md,
   },
-  menuTitle: {
+  appIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: `${COLORS.primary}15`,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: SPACING.md,
+  },
+  appInfoTextContainer: {
     flex: 1,
-    fontSize: FONTS.sizes.md,
-    color: COLORS.dark,
-    marginLeft: SPACING.md,
-  },
-  menuRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  badge: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: COLORS.danger,
-    marginRight: SPACING.xs,
-  },
-  appInfo: {
-    alignItems: 'center',
-    paddingVertical: SPACING.sm,
   },
   appInfoText: {
-    fontSize: FONTS.sizes.md,
-    fontWeight: '600',
+    fontSize: FONTS.sizes.lg,
+    fontWeight: '700',
     color: COLORS.dark,
+  },
+  appInfoVersion: {
+    fontSize: FONTS.sizes.sm,
+    color: COLORS.gray,
+    marginTop: 2,
   },
   appInfoSubtext: {
     fontSize: FONTS.sizes.sm,
     color: COLORS.gray,
-    marginTop: 4,
+    lineHeight: 20,
   },
   signOutButton: {
     marginTop: SPACING.md,

@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { COLORS, FONTS, SPACING } from '../constants';
 import { useTimeTracking } from '../contexts/TimeTrackingContext';
+import { TimeUpIllustration } from '../components/illustrations';
 
 const BlockingOverlay = () => {
   const insets = useSafeAreaInsets();
@@ -34,14 +35,14 @@ const BlockingOverlay = () => {
       return {
         title: 'Akses Diblokir',
         subtitle: blockReason || 'Akses Anda telah diblokir oleh admin.',
-        icon: 'block-helper',
+        showIllustration: false,
       };
     }
     
     return {
       title: 'Waktu Habis',
       subtitle: 'Waktu akses media sosial Anda hari ini telah habis. Istirahat sejenak dan kembali besok!',
-      icon: 'timer-off',
+      showIllustration: true,
     };
   };
 
@@ -52,9 +53,13 @@ const BlockingOverlay = () => {
       <StatusBar barStyle="light-content" backgroundColor={COLORS.overlay} />
       
       <View style={styles.content}>
-        <View style={styles.iconContainer}>
-          <Icon name={message.icon} size={80} color={COLORS.white} />
-        </View>
+        {message.showIllustration ? (
+          <TimeUpIllustration size={180} color="#FFFFFF" />
+        ) : (
+          <View style={styles.iconContainer}>
+            <Icon name="block-helper" size={80} color={COLORS.white} />
+          </View>
+        )}
         
         <Text style={styles.title}>{message.title}</Text>
         <Text style={styles.subtitle}>{message.subtitle}</Text>
@@ -69,7 +74,7 @@ const BlockingOverlay = () => {
         </View>
         
         <View style={styles.logo}>
-          <Text style={styles.logoEmoji}>🐢</Text>
+          <Icon name="timer-sand" size={24} color="rgba(255, 255, 255, 0.6)" />
           <Text style={styles.logoText}>SlowDown</Text>
         </View>
       </View>
@@ -130,14 +135,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  logoEmoji: {
-    fontSize: 32,
-    marginRight: SPACING.sm,
-  },
   logoText: {
     fontSize: FONTS.sizes.xl,
     fontWeight: 'bold',
     color: COLORS.white,
+    marginLeft: SPACING.xs,
   },
 });
 

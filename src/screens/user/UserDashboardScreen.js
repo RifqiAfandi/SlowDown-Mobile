@@ -12,6 +12,7 @@ import {
   RefreshControl,
   Alert,
   TouchableOpacity,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -22,6 +23,7 @@ import { COLORS, FONTS, SPACING } from '../../constants';
 import { Card, Button, Avatar, Header } from '../../components/common';
 import { TimeDisplay, TimeRequestModal } from '../../components/time';
 import { AppUsageList } from '../../components/charts';
+import { PermissionIllustration } from '../../components/illustrations';
 import { formatMinutesToReadable } from '../../utils/dateUtils';
 import { Logger } from '../../utils/logger';
 
@@ -48,10 +50,18 @@ const UserDashboardScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [submittingRequest, setSubmittingRequest] = useState(false);
+  const [showPermissionModal, setShowPermissionModal] = useState(false);
 
-  // Check permission on mount and when app comes back
+  // Check permission on mount and show modal if not granted
   useEffect(() => {
-    checkPermission();
+    const checkAndShowPermissionModal = async () => {
+      const hasAccess = await checkPermission();
+      // Only show modal if permission not granted
+      if (!hasAccess) {
+        setShowPermissionModal(true);
+      }
+    };
+    checkAndShowPermissionModal();
   }, [checkPermission]);
 
   const onRefresh = useCallback(async () => {
@@ -60,16 +70,6 @@ const UserDashboardScreen = () => {
     await refreshUsage();
     setRefreshing(false);
   }, [refreshUsage, checkPermission]);
-
-  const handleRequestPermission = async () => {
-    await requestPermission();
-    // Show alert to guide user
-    Alert.alert(
-      'Izin Diperlukan',
-      'Silakan aktifkan izin "Usage Access" untuk aplikasi SlowDown di halaman Settings yang terbuka, lalu kembali ke aplikasi.',
-      [{ text: 'OK' }]
-    );
-  };
 
   const handleRequestTime = async (minutes, reason) => {
     try {
@@ -95,25 +95,70 @@ const UserDashboardScreen = () => {
 
   const canRequestTime = isTimeUp && !userData?.pendingTimeRequest && !isBlocked;
 
-  // Permission warning banner
-  const PermissionBanner = () => (
-    <Card style={styles.permissionCard}>
-      <View style={styles.permissionContent}>
-        <Icon name="shield-alert" size={40} color={COLORS.warning} />
-        <View style={styles.permissionText}>
-          <Text style={styles.permissionTitle}>Izin Diperlukan</Text>
-          <Text style={styles.permissionDescription}>
-            Untuk melacak penggunaan media sosial, aplikasi memerlukan izin "Usage Access".
+  // Handle permission request from modal
+  const handleGrantPermission = async () => {
+    setShowPermissionModal(false);
+    await requestPermission();
+    // Check again after user returns from settings
+    setTimeout(async () => {
+      const hasAccess = await checkPermission();
+      if (!hasAccess) {
+        // User didn't grant permission, show modal again
+        setShowPermissionModal(true);
+      }
+    }, 1000);
+  };
+
+  // Permission Modal Popup
+  const PermissionModal = () => (
+    <Modal
+      visible={showPermissionModal}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setShowPermissionModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.permissionModal}>
+          <PermissionIllustration size={140} color={COLORS.primary} />
+          
+          <Text style={styles.permissionModalTitle}>Izin Diperlukan</Text>
+          
+          <Text style={styles.permissionModalDescription}>
+            Untuk melacak penggunaan media sosial secara akurat, aplikasi memerlukan izin "Usage Access".
           </Text>
+          
+          <View style={styles.permissionModalStepsContainer}>
+            <View style={styles.stepItem}>
+              <View style={styles.stepNumber}><Text style={styles.stepNumberText}>1</Text></View>
+              <Text style={styles.stepText}>Ketuk "Beri Izin" di bawah</Text>
+            </View>
+            <View style={styles.stepItem}>
+              <View style={styles.stepNumber}><Text style={styles.stepNumberText}>2</Text></View>
+              <Text style={styles.stepText}>Cari "SlowDown" dalam daftar</Text>
+            </View>
+            <View style={styles.stepItem}>
+              <View style={styles.stepNumber}><Text style={styles.stepNumberText}>3</Text></View>
+              <Text style={styles.stepText}>Aktifkan izin akses penggunaan</Text>
+            </View>
+          </View>
+          
+          <View style={styles.permissionModalButtons}>
+            <Button
+              title="Nanti Saja"
+              onPress={() => setShowPermissionModal(false)}
+              variant="outline"
+              style={styles.permissionModalButton}
+            />
+            <Button
+              title="Beri Izin"
+              onPress={handleGrantPermission}
+              variant="primary"
+              style={styles.permissionModalButton}
+            />
+          </View>
         </View>
       </View>
-      <Button
-        title="Beri Izin"
-        onPress={handleRequestPermission}
-        variant="primary"
-        style={styles.permissionButton}
-      />
-    </Card>
+    </Modal>
   );
 
   return (
@@ -139,9 +184,6 @@ const UserDashboardScreen = () => {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {/* Permission Warning */}
-        {!hasPermission && <PermissionBanner />}
-
         {/* Time Display Card */}
         <Card style={styles.timeCard} variant="elevated">
           <TimeDisplay
@@ -211,6 +253,9 @@ const UserDashboardScreen = () => {
           </Text>
         </Card>
       </ScrollView>
+
+      {/* Permission Modal */}
+      <PermissionModal />
 
       <TimeRequestModal
         visible={showRequestModal}
@@ -325,35 +370,82 @@ const styles = StyleSheet.create({
     color: COLORS.gray,
     lineHeight: 20,
   },
-  permissionCard: {
-    padding: SPACING.md,
-    marginBottom: SPACING.md,
-    backgroundColor: COLORS.warning + '10',
-    borderWidth: 1,
-    borderColor: COLORS.warning,
+  // Permission Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SPACING.lg,
   },
-  permissionContent: {
+  permissionModal: {
+    backgroundColor: COLORS.white,
+    borderRadius: 24,
+    padding: SPACING.lg,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  permissionModalTitle: {
+    fontSize: FONTS.sizes.xl,
+    fontWeight: '700',
+    color: COLORS.dark,
+    marginTop: SPACING.md,
+    marginBottom: SPACING.sm,
+    textAlign: 'center',
+  },
+  permissionModalDescription: {
+    fontSize: FONTS.sizes.md,
+    color: COLORS.gray,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: SPACING.md,
+    paddingHorizontal: SPACING.sm,
+  },
+  permissionModalStepsContainer: {
+    backgroundColor: COLORS.ultraLight,
+    padding: SPACING.md,
+    borderRadius: 12,
+    marginBottom: SPACING.lg,
+    width: '100%',
+  },
+  stepItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm,
   },
-  permissionText: {
-    flex: 1,
-    marginLeft: SPACING.md,
+  stepNumber: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: SPACING.sm,
   },
-  permissionTitle: {
-    fontSize: FONTS.sizes.md,
-    fontWeight: '600',
-    color: COLORS.dark,
-    marginBottom: SPACING.xs,
-  },
-  permissionDescription: {
+  stepNumberText: {
+    color: COLORS.white,
     fontSize: FONTS.sizes.sm,
-    color: COLORS.gray,
-    lineHeight: 18,
+    fontWeight: '600',
   },
-  permissionButton: {
-    marginTop: SPACING.sm,
+  stepText: {
+    flex: 1,
+    fontSize: FONTS.sizes.sm,
+    color: COLORS.dark,
+  },
+  permissionModalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: SPACING.sm,
+  },
+  permissionModalButton: {
+    flex: 1,
   },
 });
 
