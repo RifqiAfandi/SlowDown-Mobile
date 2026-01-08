@@ -70,44 +70,65 @@ export const TimeTrackingProvider = ({ children }) => {
 
   // Sync usage data from device to backend
   const syncUsageFromDevice = useCallback(async () => {
-    if (!userData?.id || isAdmin || !hasPermission) return;
+    if (!userData?.id || isAdmin) {
+      logger.debug('Skipping sync - no user or is admin', { userId: userData?.id, isAdmin });
+      return;
+    }
+    
+    if (!hasPermission) {
+      logger.warn('Skipping sync - no usage stats permission');
+      return;
+    }
 
     try {
+      // Get usage from Android native module
       const deviceUsage = await usageStatsNative.getSocialMediaUsageToday();
-      logger.info('Device usage fetched', deviceUsage);
+      logger.info('📊 Device usage fetched from native module:', JSON.stringify(deviceUsage));
 
-      // Sync to backend
-      const response = await apiClient.post('/usage/sync', {
-        date: getDateKey(getCurrentWIBDate()),
-        totalMinutes: deviceUsage.totalMinutes,
-        appUsage: deviceUsage.appUsage,
-      });
+      if (!deviceUsage || deviceUsage.totalMinutes === undefined) {
+        logger.warn('Invalid device usage data received');
+        return;
+      }
 
-      const usage = response.data.usage;
-      
-      // Update local state
-      setUsedMinutes(usage.totalMinutes);
+      // Update local state immediately with device data (before backend sync)
+      setUsedMinutes(deviceUsage.totalMinutes);
       setTodayUsage({
-        totalMinutes: usage.totalMinutes,
-        appUsage: usage.appUsage,
+        totalMinutes: deviceUsage.totalMinutes,
+        appUsage: deviceUsage.appUsage || {},
       });
-
-      const remaining = Math.max(0, usage.dailyLimit - usage.totalMinutes);
+      
+      // Calculate remaining minutes
+      const dailyLimit = userData?.dailyLimitMinutes || DEFAULT_DAILY_LIMIT;
+      const remaining = Math.max(0, dailyLimit - deviceUsage.totalMinutes);
       setRemainingMinutes(remaining);
-      setIsTimeUp(usage.isLimitExceeded);
+      setIsTimeUp(deviceUsage.totalMinutes >= dailyLimit);
 
-      logger.info('Usage synced', { 
-        totalMinutes: usage.totalMinutes, 
+      logger.info('✅ Local state updated', { 
+        totalMinutes: deviceUsage.totalMinutes, 
         remaining,
-        isLimitExceeded: usage.isLimitExceeded 
+        dailyLimit,
+        appUsage: deviceUsage.appUsage 
       });
 
-      return usage;
+      // Try to sync to backend (optional, don't fail if backend unreachable)
+      try {
+        const response = await apiClient.post('/usage/sync', {
+          date: getDateKey(getCurrentWIBDate()),
+          totalMinutes: deviceUsage.totalMinutes,
+          appUsage: deviceUsage.appUsage,
+        });
+
+        logger.info('🔄 Backend sync successful', response.data);
+      } catch (backendError) {
+        logger.warn('Backend sync failed (using local data)', backendError.message);
+      }
+
+      return deviceUsage;
     } catch (error) {
-      logger.error('Failed to sync usage from device', error);
+      logger.error('❌ Failed to sync usage from device', error);
       throw error;
     }
-  }, [userData?.id, isAdmin, hasPermission]);
+  }, [userData?.id, userData?.dailyLimitMinutes, isAdmin, hasPermission]);
 
   // Initial permission check
   useEffect(() => {
@@ -192,20 +213,34 @@ export const TimeTrackingProvider = ({ children }) => {
   /**
    * Start tracking for an app
    * @param {string} appId - App ID to track
+   */
+   
   // Auto-sync usage periodically when app is active
   useEffect(() => {
-    if (!userData?.id || isAdmin || !hasPermission) return;
+    if (!userData?.id || isAdmin) {
+      logger.debug('Auto-sync disabled - no user or is admin');
+      return;
+    }
+    
+    if (!hasPermission) {
+      logger.debug('Auto-sync disabled - no permission');
+      return;
+    }
 
-    // Sync immediately
-    syncUsageFromDevice();
+    logger.info('🚀 Starting auto-sync with 30-second interval');
 
-    // Set up periodic sync (every 60 seconds)
+    // Sync immediately on mount
+    syncUsageFromDevice().catch(err => logger.error('Initial sync failed', err));
+
+    // Set up periodic sync (every 30 seconds for more responsive updates)
     syncIntervalRef.current = setInterval(() => {
-      syncUsageFromDevice();
-    }, 60000);
+      logger.debug('⏰ Periodic sync triggered');
+      syncUsageFromDevice().catch(err => logger.error('Periodic sync failed', err));
+    }, 30000); // 30 seconds
 
     return () => {
       if (syncIntervalRef.current) {
+        logger.debug('Clearing sync interval');
         clearInterval(syncIntervalRef.current);
       }
     };

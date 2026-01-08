@@ -63,6 +63,7 @@ class UsageStatsModule(reactContext: ReactApplicationContext) : ReactContextBase
     fun getSocialMediaUsageToday(promise: Promise) {
         try {
             if (!checkUsageStatsPermission()) {
+                android.util.Log.e("UsageStatsModule", "Permission denied - no usage stats access")
                 promise.reject("PERMISSION_DENIED", "Usage stats permission not granted")
                 return
             }
@@ -77,6 +78,8 @@ class UsageStatsModule(reactContext: ReactApplicationContext) : ReactContextBase
             val startTime = calendar.timeInMillis
             val endTime = System.currentTimeMillis()
 
+            android.util.Log.d("UsageStatsModule", "Querying usage stats from $startTime to $endTime")
+
             val stats = usageStatsManager.queryUsageStats(
                 UsageStatsManager.INTERVAL_DAILY,
                 startTime,
@@ -86,6 +89,8 @@ class UsageStatsModule(reactContext: ReactApplicationContext) : ReactContextBase
             val result = WritableNativeMap()
             var totalMinutes = 0L
 
+            android.util.Log.d("UsageStatsModule", "Found ${stats?.size ?: 0} total app stats")
+
             if (stats != null) {
                 for (usageStats in stats) {
                     val packageName = usageStats.packageName
@@ -93,6 +98,8 @@ class UsageStatsModule(reactContext: ReactApplicationContext) : ReactContextBase
                         val appName = SOCIAL_MEDIA_PACKAGES[packageName] ?: packageName
                         val timeInForeground = usageStats.totalTimeInForeground
                         val minutes = timeInForeground / 60000
+
+                        android.util.Log.d("UsageStatsModule", "📱 $appName ($packageName): ${minutes}min (${timeInForeground}ms)")
 
                         if (minutes > 0) {
                             val existingMinutes = if (result.hasKey(appName)) result.getInt(appName).toLong() else 0L
@@ -103,12 +110,15 @@ class UsageStatsModule(reactContext: ReactApplicationContext) : ReactContextBase
                 }
             }
 
+            android.util.Log.d("UsageStatsModule", "✅ Total social media usage: ${totalMinutes}min")
+
             val response = WritableNativeMap()
             response.putMap("appUsage", result)
             response.putInt("totalMinutes", totalMinutes.toInt())
             
             promise.resolve(response)
         } catch (e: Exception) {
+            android.util.Log.e("UsageStatsModule", "Error getting usage stats", e)
             promise.reject("ERROR", e.message)
         }
     }

@@ -35,28 +35,25 @@ const UserStatsScreen = () => {
 
   // Calculate weekly totals
   const weeklyTotal = weeklyUsage.reduce((sum, day) => sum + (day.totalMinutes || 0), 0);
-  const dailyAverage = weeklyTotal / 7;
+  const dailyAverage = Math.round(weeklyTotal / 7);
 
   // Find most used app this week
+  // Weekly usage format: [{ date, totalMinutes, appUsage: { "Instagram": 5, ... } }]
   const appTotals = {};
-  SOCIAL_MEDIA_APPS.forEach(app => {
-    appTotals[app.id] = 0;
-  });
   
   weeklyUsage.forEach(day => {
-    Object.entries(day.apps || {}).forEach(([appId, minutes]) => {
-      if (appTotals[appId] !== undefined) {
-        appTotals[appId] += minutes;
-      }
+    const appUsage = day.appUsage || {};
+    Object.entries(appUsage).forEach(([appName, minutes]) => {
+      appTotals[appName] = (appTotals[appName] || 0) + minutes;
     });
   });
 
   let mostUsedApp = null;
   let maxUsage = 0;
-  Object.entries(appTotals).forEach(([appId, total]) => {
+  Object.entries(appTotals).forEach(([appName, total]) => {
     if (total > maxUsage) {
       maxUsage = total;
-      mostUsedApp = SOCIAL_MEDIA_APPS.find(app => app.id === appId);
+      mostUsedApp = SOCIAL_MEDIA_APPS.find(app => app.name === appName);
     }
   });
 

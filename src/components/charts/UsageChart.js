@@ -18,15 +18,31 @@ const UsageChart = ({
 }) => {
   // Prepare chart data based on type
   const prepareChartData = () => {
-    if (type === 'daily' && data?.apps) {
+    if (type === 'daily' && data) {
       // Daily chart - show usage per app
+      // Data format: { appUsage: { "Instagram": 5, "YouTube": 10 }, totalMinutes: 15 }
+      const appUsage = data.appUsage || data.apps || {};
       const labels = [];
       const values = [];
       
-      SOCIAL_MEDIA_APPS.forEach(app => {
-        labels.push(app.name.substring(0, 4));
-        values.push(data.apps[app.id] || 0);
-      });
+      // Get apps with usage, sorted by usage descending
+      const appsWithUsage = SOCIAL_MEDIA_APPS
+        .filter(app => (appUsage[app.name] || 0) > 0)
+        .sort((a, b) => (appUsage[b.name] || 0) - (appUsage[a.name] || 0))
+        .slice(0, 5); // Show top 5 apps
+      
+      if (appsWithUsage.length > 0) {
+        appsWithUsage.forEach(app => {
+          labels.push(app.name.substring(0, 3));
+          values.push(appUsage[app.name] || 0);
+        });
+      } else {
+        // Show placeholder if no usage
+        SOCIAL_MEDIA_APPS.slice(0, 4).forEach(app => {
+          labels.push(app.name.substring(0, 3));
+          values.push(0);
+        });
+      }
       
       return {
         labels,
@@ -34,7 +50,7 @@ const UsageChart = ({
       };
     } else if (type === 'weekly' && Array.isArray(data)) {
       // Weekly chart - show total usage per day
-      const labels = data.map(day => getDayName(day.dateKey));
+      const labels = data.map(day => getDayName(day.date || day.dateKey));
       const values = data.map(day => day.totalMinutes || 0);
       
       return {

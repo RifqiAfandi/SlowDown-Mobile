@@ -127,10 +127,12 @@ export const getUsageHistory = async (days = 7) => {
       
       history.push({
         date: date.toISOString().split('T')[0],
-        ...usage,
+        appUsage: usage.appUsage || {}, // Consistent naming
+        totalMinutes: usage.totalMinutes || 0,
       });
     }
     
+    logger.debug('Usage history fetched', { days, history });
     return history;
   } catch (error) {
     logger.error('Failed to get usage history', error);
